@@ -1,0 +1,59 @@
+---
+title: "Running locally"
+description: "Boot the API, run tests, inspect docs/jobs."
+---
+
+## Start the API
+
+```bash
+npm run dev
+```
+
+What it does:
+
+1. Runs GraphQL codegen for Shopify Admin types (`npm run codegen`).
+2. Starts Fastify via `tsx --watch src/server.ts` on `PORT` (default `3001`).
+
+Health check:
+
+```bash
+curl http://localhost:3001/health
+# → { "status": "ok" }
+```
+
+## Swagger / OpenAPI
+
+The Fastify app exposes Swagger UI when `NODE_ENV !== 'production'`:
+
+- **Swagger UI** — `http://localhost:3001/docs`
+- **OpenAPI JSON** — `http://localhost:3001/docs/json`
+
+Every route in `src/modules/*/interfaces/http/*.routes.ts` is auto-discovered.
+
+## Tests
+
+```bash
+npm test               # vitest run (all unit + integration + e2e)
+npm run typecheck      # tsc --noEmit
+npm run lint           # eslint
+```
+
+Three flavors share the `mab_test` DB:
+
+| Flavor | Where | Speed |
+|---|---|---|
+| Unit | `tests/<module>/{domain,application}` | very fast, no DB |
+| Integration | `tests/<module>/integration/*.int.spec.ts` | hits real Postgres |
+| E2E | `tests/<module>/e2e/*.e2e.spec.ts` | Fastify via `app.inject()` |
+
+`global-setup.ts` drops + remigrates `mab_test` once per run. `resetDb()` truncates between tests. `fileParallelism: false` so DB state stays predictable.
+
+## BullMQ dashboard
+
+When `BULL_BOARD_ENABLED=true`, the dashboard mounts at:
+
+```
+http://localhost:3001/bull
+```
+
+Auth via `BULL_BOARD_USER` / `BULL_BOARD_PASSWORD`.

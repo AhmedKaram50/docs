@@ -1,0 +1,66 @@
+---
+title: "Environment variables"
+description: "All env vars validated at boot by TypeBox (`src/config/env.ts`). Missing or malformed values fail fast."
+---
+
+## Required
+
+| Name | Notes |
+|---|---|
+| `DATABASE_URL` | Postgres connection string. Example: `postgresql://rastova:root@localhost:5432/mab` |
+| `JWT_SECRET` | Min **32 chars**. Symmetric key for HS256 access tokens. |
+| `BULL_BOARD_PASSWORD` | Basic-auth password for the BullMQ UI. |
+| `INTERNAL_API_SECRET` | Min **16 chars**. Header `x-internal-secret` for the Shopify install callback. |
+| `SHOPIFY_WEBHOOK_SECRET` | Used to verify Shopify webhook HMAC. |
+| `SHOPIFY_WEBHOOK_BASE_URL` | Public URL where Shopify posts webhooks. |
+| `SHOPIFY_API_VERSION` | Must match `.graphqlrc.ts` — bump both together. |
+| `SHOPIFY_TOKEN_ENCRYPTION_KEY` | Encrypts the per-shop Shopify access token at rest (AES-GCM). |
+| `SHOPIFY_CHANNEL_SPECIFICATION_HANDLE` | Specifies the Shopify sales-channel handle to sync. |
+
+## Optional (defaults shown)
+
+| Name | Default | Notes |
+|---|---|---|
+| `NODE_ENV` | `development` | One of `development` \| `production` \| `test`. |
+| `PORT` | `3001` | HTTP port. |
+| `LOG_LEVEL` | `info` | pino level. |
+| `JWT_ACCESS_TTL` | `15m` | Access-token lifetime. |
+| `JWT_REFRESH_TTL` | `30d` | Refresh-token lifetime. |
+| `CORS_ORIGINS` | `""` | Comma-separated allowlist. Empty = same-origin only. |
+| `REDIS_URL` | `redis://localhost:6379` | BullMQ connection. |
+| `BULL_BOARD_USER` | `admin` | BullMQ UI user. |
+| `BULL_BOARD_ENABLED` | `false` | Mount `/bull` route. |
+| `SHOPIFY_CHANNEL_FEED_POLL_TIMEOUT_MS` | `30000` | Feed sync timeout. |
+| `SHOPIFY_SYNC_GLOBAL_CONCURRENCY` | `20` | BullMQ global concurrency. |
+| `SHOPIFY_SYNC_PER_SHOP_CONCURRENCY` | `4` | Per-shop concurrency cap. |
+
+## Example `.env`
+
+```bash
+NODE_ENV=development
+PORT=3001
+LOG_LEVEL=debug
+
+DATABASE_URL=postgresql://rastova:root@localhost:5432/mab
+
+JWT_SECRET=please-change-this-to-32+-chars-minimum-secret
+JWT_ACCESS_TTL=15m
+JWT_REFRESH_TTL=30d
+
+REDIS_URL=redis://localhost:6379
+BULL_BOARD_USER=admin
+BULL_BOARD_PASSWORD=local-only
+BULL_BOARD_ENABLED=true
+
+INTERNAL_API_SECRET=internal-secret-min-16-chars
+
+SHOPIFY_WEBHOOK_SECRET=replace-me
+SHOPIFY_WEBHOOK_BASE_URL=https://example.ngrok.app
+SHOPIFY_API_VERSION=2025-01
+SHOPIFY_TOKEN_ENCRYPTION_KEY=replace-me-32-bytes-hex
+SHOPIFY_CHANNEL_SPECIFICATION_HANDLE=mab-channel
+```
+
+<Warning>
+  Never commit `.env`. The test runner overrides env via `tests/setup.ts` so tests don't read your dev `.env` directly.
+</Warning>

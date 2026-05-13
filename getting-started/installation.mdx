@@ -1,0 +1,54 @@
+---
+title: "Installation"
+description: "Clone, install dependencies, prep Postgres."
+---
+
+## Prerequisites
+
+- **Node.js** ≥ 20.17 (ESM, `tsx` for dev)
+- **npm** (project uses npm — not pnpm/yarn)
+- **PostgreSQL** ≥ 16 reachable on `DATABASE_URL`
+- **Redis** ≥ 6 for BullMQ (used by shopify-sync workers)
+
+## Clone & install
+
+```bash
+git clone <repo-url> mab-api
+cd mab-api
+npm install
+```
+
+## Database
+
+Create the development database (defaults assume local Postgres on `:5432` with user `rastova`):
+
+```bash
+createdb -U rastova mab
+```
+
+Apply migrations and seed:
+
+```bash
+npm run db:fresh
+```
+
+`db:fresh` drops the `public` + `drizzle` schemas, re-runs every Drizzle migration, then runs seed scripts. Use it any time the schema gets out of sync locally.
+
+Other DB commands:
+
+| Command | What it does |
+|---|---|
+| `npm run db:generate` | Generate a new migration from schema diffs |
+| `npm run db:migrate` | Apply pending migrations only |
+| `npm run db:seed` | Run seeds without dropping anything |
+| `npm run db:studio` | Open Drizzle Studio (visual DB browser) |
+
+## Test database
+
+Tests share a separate database called `mab_test`. Create it once:
+
+```bash
+createdb -U rastova mab_test
+```
+
+The test harness drops + re-migrates `mab_test` on every run, so no manual setup beyond creating it.

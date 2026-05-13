@@ -1,0 +1,64 @@
+---
+title: "Error handling"
+description: "Uniform error envelope, status codes, error codes."
+---
+
+## Error envelope
+
+Every non-2xx response uses the shape:
+
+```json
+{
+  "error": {
+    "code": "MACHINE_READABLE_CODE",
+    "message": "Human-readable text"
+  }
+}
+```
+
+Some validation errors include a `details` field for the underlying TypeBox errors.
+
+## Status code → error class
+
+| Status | Error class | Default code | When |
+|---|---|---|---|
+| 400 | (TypeBox validation) | `BAD_REQUEST` | Request body fails schema validation |
+| 401 | `UnauthorizedError` | `UNAUTHORIZED` | Missing/invalid bearer token, invalid credentials, expired/revoked refresh token |
+| 403 | `ForbiddenError` | `FORBIDDEN` | Internal-secret missing or bad |
+| 404 | `NotFoundError` | `NOT_FOUND` | Resource doesn't exist |
+| 404 | (route) | `ROUTE_NOT_FOUND` | No matching route |
+| 409 | `ConflictError` | `CONFLICT` | Uniqueness or state-machine conflict |
+| 422 | `ValidationError` | `VALIDATION` | Domain-level invariant failed |
+| 422 | `DomainError` | (each subclass) | Aggregate invariant violation |
+| 500 | (unhandled) | `INTERNAL` | Anything not caught — logged at error level |
+
+## Where the handler lives
+
+`src/shared/http/error-handler.plugin.ts`:
+
+```ts
+app.setErrorHandler((err, req, reply) => {
+  if (err instanceof ApplicationError) {
+    return reply.status(err.status).send({ error: { code: err.code, message: err.message } });
+  }
+  if (err instanceof DomainError) {
+    return reply.status(422).send({ error: { code: err.code, message: err.message } });
+  }
+  if (err.validation) {
+    return reply.status(400).send({ error: { code: 'BAD_REQUEST', message: err.message, details: err.validation } });
+  }
+  return reply.status(500).send({ error: { code: 'INTERNAL', message: 'Internal server error' } });
+});
+```
+
+## Throwing application errors
+
+```ts
+import { ConflictError, UnauthorizedError, ValidationError } from '@shared/errors/application-error.js';
+
+throw new ConflictError('Shop already registered', 'SHOP_EXISTS');
+throw new UnauthorizedError('Invalid credentials', 'INVALID_CREDENTIALS');
+throw new ValidationError('Password must be at least 8 characters', 'WEAK_PASSWORD');
+```
+
+The `code` is the contract — clients pattern-match on it. The `message` is for humans and may change. See the [Identity errors reference](/modules/identity/errors) for the full list emitted by that module.

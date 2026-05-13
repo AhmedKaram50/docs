@@ -1,0 +1,62 @@
+---
+title: "Errors"
+description: "Every error code the Identity module can return."
+---
+
+All errors share the envelope `{ "error": { "code", "message" } }`. The `code` is the contract — client code matches on it. Messages may be improved over time.
+
+## Auth
+
+| Code | Status | Endpoint | Reason |
+|---|---|---|---|
+| `WEAK_PASSWORD` | 422 | `/register`, `/set-password`, `/invites/:token/accept` | `password.length < 8` |
+| `SHOP_EXISTS` | 409 | `/register` | `shopifyDomain` already registered |
+| `ACCOUNT_EXISTS` | 409 | `/register`, `/set-password` | Email already owned by another account (and supplied password doesn't match in set-password) |
+| `INVALID_CREDENTIALS` | 401 | `/login`, `/invites/:token/accept` | Wrong shop / email / password / missing membership |
+| `INVALID_REFRESH_TOKEN` | 401 | `/refresh` | Token missing, expired, or revoked |
+| `ACCOUNT_INACTIVE` | 401 | `/refresh` | Owning account is not `active` |
+| `INVALID_SHOP_ID` | 422 | `/refresh` | Provided `shopId` is not a valid UUID |
+| `SHOP_MISSING` | 401 | `/refresh` | Shop no longer exists |
+| `NOT_A_MEMBER` | 401 | `/refresh` | Account not a member of the requested shop |
+| `NO_AUTH` | 401 | any authed route, `/set-password` | Missing/invalid `Authorization: Bearer …` header |
+| `SHOP_NOT_FOUND` | 404 | `/set-password` | Token's `shopId` doesn't exist |
+| `OWNER_EXISTS` | 409 | `/set-password` | Shop already has an owner |
+
+## Shopify callback
+
+| Code | Status | Reason |
+|---|---|---|
+| `NO_INTERNAL_SECRET` | 403 | `x-internal-secret` header missing |
+| `BAD_INTERNAL_SECRET` | 403 | `x-internal-secret` doesn't match `env.INTERNAL_API_SECRET` |
+
+## Team
+
+| Code | Status | Endpoint | Reason |
+|---|---|---|---|
+| `ALREADY_MEMBER` | 409 | `/v1/team/invites`, `/v1/team/invites/:token/accept` | Account is already a member of the shop |
+| `INVITE_NOT_FOUND` | 404 | `/v1/team/invites/:token/accept` | Token doesn't match any invite |
+| `INVITE_EXPIRED` | 422 | `/v1/team/invites/:token/accept` | Invite TTL elapsed |
+| `INVITE_ALREADY_ACCEPTED` | 422 | `/v1/team/invites/:token/accept` | Invite already used |
+| `CANNOT_REVOKE_OWNER` | 409 | `DELETE /v1/team/accounts/:id` | Target account is the shop owner |
+
+## Subscription
+
+| Code | Status | Reason |
+|---|---|---|
+| `SUBSCRIPTION_EXISTS` | 409 | Trying to start a trial when one already exists |
+| `SUBSCRIPTION_NOT_FOUND` | 404 | `GET`/`PUT`/`DELETE` on a shop without a subscription |
+| `INVALID_TIER_TRANSITION` | 422 | Domain rule rejected the tier change |
+| `ALREADY_CANCELED` | 422 | Cancel called on an already-canceled subscription |
+
+## Generic
+
+| Code | Status | Reason |
+|---|---|---|
+| `BAD_REQUEST` | 400 | Request body fails TypeBox schema validation. Response includes `details` with the validation errors. |
+| `UNAUTHORIZED` | 401 | Default for unspecified auth failures |
+| `FORBIDDEN` | 403 | Default for unspecified authorization failures |
+| `NOT_FOUND` | 404 | Default for missing resource |
+| `CONFLICT` | 409 | Default for state conflicts |
+| `VALIDATION` | 422 | Default for application-level validation |
+| `ROUTE_NOT_FOUND` | 404 | No matching route |
+| `INTERNAL` | 500 | Anything unhandled — see server logs |

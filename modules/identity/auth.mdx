@@ -1,0 +1,239 @@
+---
+title: "Auth"
+description: "Register a shop, log in, refresh, log out."
+---
+
+All auth routes are prefixed with `/v1/auth`. Bodies are JSON, responses are JSON. The error envelope is `{ "error": { "code", "message" } }` — see [Errors](/modules/identity/errors) for the full list.
+
+## Token model
+
+| Token | What it is | Where it goes | Lifetime |
+|---|---|---|---|
+| `accessToken` | JWT HS256 with `{ shopId, accountId }` | `Authorization: Bearer <token>` header | `JWT_ACCESS_TTL` (default 15m) |
+| `refreshToken` | Opaque base64url string | Request body for `/refresh` and `/logout` | `JWT_REFRESH_TTL` (default 30d) |
+
+Store the refresh token securely (HTTP-only cookie or secure mobile storage). Treat the access token as ephemeral — re-fetch it via `/refresh` whenever the old one expires.
+
+---
+
+## Register {#register}
+
+Create a shop, its owner account, the membership, a trial subscription, and a refresh token — all in one call.
+
+<ParamField path="POST /v1/auth/register" />
+
+### Request body
+
+| Field | Type | Notes |
+|---|---|---|
+| `shopifyDomain` | string | e.g. `acme.myshopify.com` |
+| `shopName` | string | Display name |
+| `ownerEmail` | string (email) | Becomes the global account email |
+| `password` | string | ≥ 8 chars |
+| `locale` | string (optional) | Defaults to `en` |
+
+### Response — `201`
+
+```json
+{
+  "shopId": "0a3b...",
+  "accountId": "0a3b...",
+  "accessToken": "eyJ...",
+  "refreshToken": "Yt7P...."
+}
+```
+
+### Errors
+
+| Code | Status | When |
+|---|---|---|
+| `WEAK_PASSWORD` | 422 | `password.length < 8` |
+| `SHOP_EXISTS` | 409 | `shopifyDomain` already registered |
+| `ACCOUNT_EXISTS` | 409 | `ownerEmail` already belongs to another account |
+
+### Example
+
+```bash
+curl -X POST http://localhost:3001/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "shopifyDomain": "acme.myshopify.com",
+    "shopName": "Acme",
+    "ownerEmail": "owner@acme.com",
+    "password": "correct-horse-battery-staple",
+    "locale": "en"
+  }'
+```
+
+---
+
+## Login {#login}
+
+Exchange `shopifyDomain` + `email` + `password` for a new access + refresh pair.
+
+<ParamField path="POST /v1/auth/login" />
+
+### Request body
+
+| Field | Type |
+|---|---|
+| `shopifyDomain` | string |
+| `email` | string (email) |
+| `password` | string |
+
+### Response — `200`
+
+```json
+{
+  "shopId": "0a3b...",
+  "accountId": "0a3b...",
+  "accessToken": "eyJ...",
+  "refreshToken": "Yt7P..."
+}
+```
+
+### Errors
+
+| Code | Status | When |
+|---|---|---|
+| `INVALID_CREDENTIALS` | 401 | Any of: shop not found, account not found, wrong password, no membership for `(account, shop)` |
+
+<Note>
+  All credential failures return the same `INVALID_CREDENTIALS` code. This is intentional — it prevents probing which of (shop, email, password, membership) is wrong.
+</Note>
+
+### Example
+
+```bash
+curl -X POST http://localhost:3001/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "shopifyDomain": "acme.myshopify.com",
+    "email": "owner@acme.com",
+    "password": "correct-horse-battery-staple"
+  }'
+```
+
+---
+
+## Refresh {#refresh}
+
+Rotate refresh token and mint a new access token. Both `refreshToken` and `shopId` are required — the new access token is scoped to that shop.
+
+<ParamField path="POST /v1/auth/refresh" />
+
+### Request body
+
+| Field | Type | Notes |
+|---|---|---|
+| `refreshToken` | string | Raw opaque token from login/register |
+| `shopId` | string (uuid) | Which shop the new access token scopes to |
+
+### Response — `200`
+
+```json
+{
+  "accessToken": "eyJ...",
+  "refreshToken": "k3v9..."
+}
+```
+
+<Warning>
+  The old refresh token is revoked. After a successful refresh, **discard the old token** and store only the new one.
+</Warning>
+
+### Errors
+
+| Code | Status | When |
+|---|---|---|
+| `INVALID_REFRESH_TOKEN` | 401 | Token not in DB, expired, or already revoked |
+| `ACCOUNT_INACTIVE` | 401 | Owning account is not in `active` status |
+| `INVALID_SHOP_ID` | 422 | `shopId` is not a valid UUID |
+| `SHOP_MISSING` | 401 | Shop no longer exists |
+| `NOT_A_MEMBER` | 401 | Account is not a member of the requested shop |
+
+### Example
+
+```bash
+curl -X POST http://localhost:3001/v1/auth/refresh \
+  -H "Content-Type: application/json" \
+  -d '{
+    "refreshToken": "Yt7P...",
+    "shopId": "0a3b4f6e-1d2c-4e8a-9b7c-1a2b3c4d5e6f"
+  }'
+```
+
+---
+
+## Logout {#logout}
+
+Revoke a refresh token. Idempotent — revoking an already-revoked or non-existent token still returns `204`.
+
+<ParamField path="POST /v1/auth/logout" />
+
+### Request body
+
+| Field | Type |
+|---|---|
+| `refreshToken` | string |
+
+### Response — `204` (empty body)
+
+### Example
+
+```bash
+curl -X POST http://localhost:3001/v1/auth/logout \
+  -H "Content-Type: application/json" \
+  -d '{ "refreshToken": "Yt7P..." }'
+```
+
+<Tip>
+  The access token is **not** revoked on logout — it stays valid until it naturally expires (`JWT_ACCESS_TTL`). If you need immediate revocation, keep the access TTL short (default 15m).
+</Tip>
+
+---
+
+## Set password {#set-password}
+
+Used during the [Shopify install flow](/modules/identity/shopify-install-flow). The Shopify callback issues an **install token** when a shop has no owner; the client then calls `set-password` with that token to claim ownership.
+
+<ParamField path="POST /v1/auth/set-password" />
+
+### Auth
+
+`Authorization: Bearer <installToken>` (an install token from `/shopify/callback`). A normal access token also works — the endpoint accepts any valid token via `verifyAnyToken`.
+
+### Request body
+
+| Field | Type | Notes |
+|---|---|---|
+| `email` | string (email) | Account email — created if missing |
+| `password` | string | ≥ 8 chars |
+
+### Response — `200`
+
+```json
+{
+  "shopId": "0a3b...",
+  "accountId": "0a3b...",
+  "accessToken": "eyJ...",
+  "refreshToken": "Yt7P..."
+}
+```
+
+### Behavior
+
+- If the email matches an existing account: the supplied password must match the existing one (otherwise `ACCOUNT_EXISTS`). A membership is created if it doesn't exist.
+- If no account exists: a new account is created with the supplied password.
+- The shop's `ownerAccountId` is set.
+- A best-effort sync job is kicked off (`syncTrigger.trigger(shopId)`) — failures are logged, never block the response.
+
+### Errors
+
+| Code | Status | When |
+|---|---|---|
+| `NO_AUTH` | 401 | Missing/invalid `Authorization` header |
+| `WEAK_PASSWORD` | 422 | `password.length < 8` |
+| `SHOP_NOT_FOUND` | 404 | Token's `shopId` doesn't exist |
+| `OWNER_EXISTS` | 409 | Shop already has an owner — go through `/login` instead |
+| `ACCOUNT_EXISTS` | 409 | Account exists with that email but supplied password is wrong |

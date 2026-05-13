@@ -1,133 +1,47 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
-icon: 'star'
+title: "mab-api"
+description: "Mobile-App-Builder API — Fastify + TypeBox + Drizzle + Postgres, organized as a DDD modular monolith."
 ---
 
-## Setting up
+## What is mab-api?
 
-Get your documentation site up and running in minutes.
+`mab-api` is the backend for the **Mobile-App-Builder** product. It is a standalone API (not a monorepo) shaped as a **DDD modular monolith**:
 
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
+- **Fastify 5** for HTTP with TypeBox schemas for request/response validation
+- **Drizzle ORM** on Postgres 16 for persistence
+- **JWT access tokens** (short-lived) + **opaque refresh tokens** (long-lived, hashed in DB)
+- One folder per bounded context under `src/modules/`
 
-## Make it yours
+Each module follows the same four-layer shape:
 
-Design a docs site that looks great and empowers your users.
+```
+domain/ → application/ → infrastructure/ → interfaces/
+```
 
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+## Available modules
+
+<CardGroup cols={2}>
+  <Card title="Identity" icon="user" href="/modules/identity/overview">
+    Accounts, shops, memberships, invites, refresh tokens, subscription.
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Shopify Sync" icon="shop" href="/references/index">
+    Product & market feed sync (legacy docs under references).
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
-  </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
-  </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## Start here
 
-Everything you need to create world-class documentation.
-
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
-
-## Make your content agent ready
-
-Make your docs work for humans and AI agents alike.
-
-<Columns cols={2}>
-  <Card
-    title="Prompt component"
-    icon="robot"
-    href="/agent-ready/prompt"
-  >
-    Embed shareable AI prompts readers can copy or open in Cursor.
-  </Card>
-  <Card
-    title="Visibility"
-    icon="eye"
-    href="/agent-ready/visibility"
-  >
-    Show different content to humans and agents reading your docs.
-  </Card>
-  <Card
-    title="Contextual menu"
-    icon="bolt"
-    href="/agent-ready/contextual"
-  >
-    Give readers one-click access to Claude, ChatGPT, Cursor, and more.
-  </Card>
-  <Card
-    title="AI coding tools"
-    icon="wand-magic-sparkles"
-    href="/ai-tools/claude-code"
-  >
-    Set up Claude Code, Cursor, or Windsurf with Mintlify's skill.
-  </Card>
-</Columns>
-
-## Need inspiration?
-
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+<Steps>
+  <Step title="Install">
+    Clone the repo, run `npm install`, copy `.env.example` → `.env`, see [Installation](/getting-started/installation).
+  </Step>
+  <Step title="Configure">
+    Provide DB, JWT secret, Shopify keys — see [Environment](/getting-started/environment).
+  </Step>
+  <Step title="Boot">
+    `npm run db:fresh` then `npm run dev` — see [Running locally](/getting-started/running-locally).
+  </Step>
+  <Step title="Call the API">
+    Start with [Identity → Auth](/modules/identity/auth) for register/login/refresh.
+  </Step>
+</Steps>

@@ -1,0 +1,72 @@
+---
+title: "Concepts"
+description: "How Account, Shop, Membership, Invite, Subscription, and RefreshToken fit together."
+---
+
+## Account ↔ Shop ↔ Membership
+
+```
+┌──────────┐   *      *   ┌──────┐
+│ Account  │◄─Membership─►│ Shop │
+└──────────┘              └──────┘
+```
+
+- An **Account** is a human. One row per real person, keyed by email globally.
+- A **Shop** is a tenant. One row per Shopify store, keyed by `shopifyDomain` like `acme.myshopify.com`.
+- A **Membership** is the join. The same account can have memberships in multiple shops (e.g. an agency user managing several stores).
+
+### Implications
+
+- **Email is global.** Two shops cannot have two different accounts with the same email — there is only ever one account per email across the whole system.
+- **Login is shop-scoped.** A login call always asks "this email + password, into _this_ shopifyDomain". The use case verifies the account, then verifies a membership for that shop.
+- **There are no roles or permissions.** A membership exists → the account can do everything in that shop. A membership doesn't exist → the request is rejected.
+
+## Shop ownership
+
+A shop has a nullable `ownerAccountId`. The owner is the first account associated with the shop. Two paths create an owner:
+
+1. **`POST /v1/auth/register`** — creates account + shop + membership + subscription atomically, and assigns the new account as the shop owner.
+2. **`POST /v1/auth/set-password`** — after a Shopify install callback that found no owner, this endpoint sets one. See [Shopify install flow](/modules/identity/shopify-install-flow).
+
+Once a shop has an owner, `set-password` for that shop refuses with `OWNER_EXISTS` (409).
+
+## Invites
+
+Invites are **shop-scoped + email-targeted + one-time**.
+
+- Issued by a member of the shop (`POST /v1/team/invites`).
+- The raw token is shown **once** in the response. The DB stores only `sha256(token)`.
+- TTL defaults to 72h, max 720h (configurable via `ttlHours`).
+- Accepting an invite (`POST /v1/team/invites/:token/accept`):
+  - If an account exists for the email → caller must supply that account's existing password.
+  - If no account exists → a new account is created with the supplied password (≥ 8 chars).
+  - In both cases, a Membership is created and tokens are issued.
+
+## Refresh tokens
+
+- Opaque base64url bytes returned to the client once.
+- Stored as `sha256(raw)` in `refresh_tokens`.
+- Rotated on every successful refresh — the old row is `revoked_at = now()` and a new row is issued.
+- Tied to an `account_id`, not a shop. The shop scope is supplied at refresh time.
+
+## Subscription state machine
+
+```
+            startTrial
+   (none) ───────────►  trialing
+                          │
+                ┌─────────┼───────────────┐
+                │         │               │
+              changeTier  trial end       cancel
+                │         │               │
+                ▼         ▼               ▼
+              active   trialing/expired  canceled
+                │
+              cancel
+                ▼
+              canceled
+```
+
+- One subscription per shop. Trying to `startTrial` again returns `SUBSCRIPTION_EXISTS` (409).
+- Tiers: `starter | growth | pro`.
+- `changeTier` and `cancel` require an existing subscription, otherwise `SUBSCRIPTION_NOT_FOUND` (404).

@@ -1,0 +1,124 @@
+---
+title: "Module structure"
+description: "Every bounded context follows the same four-layer skeleton."
+---
+
+## Folder skeleton
+
+```
+src/modules/<name>/
+├── domain/
+│   ├── <aggregate>/
+│   │   ├── <aggregate>.aggregate.ts
+│   │   ├── <field>.vo.ts
+│   │   └── <aggregate>.repository.ts
+│   ├── events/
+│   │   └── <event-name>.event.ts
+│   └── services/
+├── application/
+│   ├── ports/
+│   │   └── <port>.port.ts
+│   ├── <area>/
+│   │   └── <action>.usecase.ts
+│   └── dtos/
+├── infrastructure/
+│   ├── persistence/
+│   │   ├── schema/
+│   │   ├── mappers/
+│   │   └── *.drizzle-repo.ts
+│   ├── adapters/
+│   └── seed/
+├── interfaces/
+│   └── http/
+│       ├── plugins/
+│       ├── schemas/
+│       └── *.routes.ts
+└── <name>.module.ts
+```
+
+## What goes where?
+
+### `domain/`
+
+- **Aggregates** extend `AggregateRoot<TId>` — encapsulate invariants, expose factory + instance methods that mutate state via private setters.
+- **Value Objects** extend `ValueObject<TProps>` — equality by value, immutable.
+- **Branded ID types** — e.g. `type ShopId = string & { __brand: 'ShopId' }`.
+- **Repository interfaces** — name them like the aggregate (`ShopRepository`). Domain owns the contract; infrastructure implements it.
+- **Domain events** in `events/` — emitted by aggregates, published outside the module.
+
+### `application/`
+
+- **Ports** — interfaces the use cases depend on (e.g. `Clock`, `PasswordHasher`, `TokenService`).
+- **Use cases** — one class per command/query with a single `execute(input)` method. Constructor-inject everything.
+- **DTOs** — input/output shapes shared between use cases or with `interfaces/`.
+
+### `infrastructure/`
+
+- **Drizzle schemas** in `persistence/schema/` — one file per table.
+- **Mappers** — plain objects with `toDomain(row)` + `toRow(aggregate)`.
+- **Repos** — `Drizzle<Name>Repository` implements the domain interface.
+- **Adapters** — implementations of `application/ports/*`.
+
+### `interfaces/`
+
+- **TypeBox schemas** colocated under `interfaces/http/schemas/`.
+- **Route plugins** — one file per route group, deps injected via plugin options.
+- **Fastify plugins** specific to the module (e.g. `jwt-auth.plugin`).
+
+### `<name>.module.ts`
+
+Composition root. The **only** place where `infrastructure/` impls meet `application/` use cases. Imports repos + adapters, builds use cases, then registers routes.
+
+## Imports — path aliases
+
+| Alias | Resolves to | Use for |
+|---|---|---|
+| `@app` | `src/app.ts` | test helpers |
+| `@shared/*` | `src/shared/*` | cross-cutting primitives |
+| `@modules/*` | `src/modules/*` | bounded contexts |
+| `@config/*` | `src/config/*` | env + config |
+| `@tests/*` | `tests/*` | test fakes (test files only) |
+
+Rules:
+
+- Never use `../` to climb out of a folder — use an alias.
+- Same-folder siblings use `./sibling.js`.
+- Keep `.js` extension on every import (NodeNext + `tsc-alias`).
+
+## Naming patterns
+
+- Aggregates: `<aggregate>.aggregate.ts`
+- VOs: `<name>.vo.ts`
+- Repositories: `<aggregate>.repository.ts` (interface) → `<aggregate>.drizzle-repo.ts` (impl)
+- Mappers: `<aggregate>.mapper.ts`
+- Ports: `<port>.port.ts`
+- Use cases: `<action>.usecase.ts`
+- Domain events: `<event-name>.event.ts`
+- Routes: `<area>.routes.ts`
+- TypeBox schemas: `<area>.schema.ts`
+
+## Adding a new module
+
+<Steps>
+  <Step title="Create the four folders">
+    `mkdir -p src/modules/<name>/{domain,application,infrastructure,interfaces}`.
+  </Step>
+  <Step title="Domain first">
+    Aggregates, VOs, repo interfaces, events.
+  </Step>
+  <Step title="Application">
+    Define ports the use cases need, then write use cases.
+  </Step>
+  <Step title="Persistence">
+    Drizzle schemas → `npm run db:generate` → mappers → repos. Every tenant-scoped table includes `shop_id uuid not null` and every query filters by it.
+  </Step>
+  <Step title="Interfaces">
+    TypeBox schemas + route plugins.
+  </Step>
+  <Step title="Wire it">
+    Create `<name>.module.ts`, register from `src/app.ts`.
+  </Step>
+  <Step title="Tests">
+    Domain unit specs + use-case specs with fakes → integration → e2e via `buildTestApp()`.
+  </Step>
+</Steps>

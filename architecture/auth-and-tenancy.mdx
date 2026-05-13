@@ -1,0 +1,82 @@
+---
+title: "Auth & tenancy"
+description: "JWT access tokens, opaque refresh tokens, shop-scoped requests, ALS tenant context."
+---
+
+## Tokens
+
+| Token | Algorithm | Storage | Lifetime | Purpose |
+|---|---|---|---|---|
+| **Access token** | JWT HS256 | not stored — verified per request | `JWT_ACCESS_TTL` (default `15m`) | Authenticate API requests |
+| **Refresh token** | Opaque (random bytes, base64url) | SHA-256 hash in `refresh_tokens` table | `JWT_REFRESH_TTL` (default `30d`) | Mint new access tokens; rotated on every refresh |
+| **Install token** | JWT HS256 (claim `purpose: 'install'`) | not stored | short-lived | Issued by `/v1/auth/shopify/callback` when a shop is installed but has no owner account yet — only valid for `POST /v1/auth/set-password` |
+
+The access token carries the claims:
+
+```ts
+{ shopId: string, accountId: string, iat, exp, iss, aud }
+```
+
+## Request lifecycle (authed routes)
+
+```
+HTTP request
+   │
+   ▼
+[ requireAuth ]            ← extract Bearer token, verify, attach req.principal
+   │
+   ▼
+[ shopContext ]            ← push { shopId, accountId } into AsyncLocalStorage
+   │
+   ▼
+[ route handler ]          ← reads req.principal.shopId, calls use case
+   │
+   ▼
+[ use case ]               ← always takes shopId as input; never trusts a body field
+   │
+   ▼
+[ drizzle repo ]           ← every query filters by shop_id
+```
+
+## Tenancy
+
+- **Account** = one human, identified globally by email.
+- **Shop** = one tenant, identified by `shopifyDomain` (e.g. `acme.myshopify.com`).
+- **Membership** = join row linking an account to a shop. One account can belong to many shops.
+- **No roles, no permissions.** Access is binary: an authenticated account either has a Membership in the requested shop, or the request is rejected.
+
+### How tenancy is enforced
+
+Tenancy is enforced **at the application layer** — there is no Postgres RLS.
+
+1. Every authed route extracts `shopId` from the access-token claims via `requireAuth`.
+2. Every use case takes `shopId` explicitly (or reads it from the principal / ALS).
+3. Every repo query that returns tenant-scoped rows includes `WHERE shop_id = $1`.
+
+### Login is shop-scoped
+
+`/v1/auth/login` requires `shopifyDomain` + `email` + `password`. The same account can log in to multiple shops it belongs to — each login is scoped to one shop.
+
+### Refresh is shop-scoped
+
+`/v1/auth/refresh` requires the refresh token **plus** the `shopId` you want the new access token scoped to. The use case re-verifies that the account is still a member of that shop before issuing the new access token.
+
+## Token storage in DB
+
+`refresh_tokens` schema:
+
+| Column | Notes |
+|---|---|
+| `id` | UUID |
+| `account_id` | FK → accounts |
+| `token_hash` | `sha256(raw)` — raw bytes never persisted |
+| `issued_at`, `expires_at`, `revoked_at` | timestamps |
+
+The raw token is returned to the client **once** in the response body. On refresh, the old row is `revoked` and a new row is issued — refresh-token rotation.
+
+## Server source of truth
+
+- `src/shared/infrastructure/crypto/jwt.service.ts` — issues + verifies tokens, exposes `refreshTokenTtlMs()`.
+- `src/modules/identity/interfaces/http/plugins/jwt-auth.plugin.ts` — `requireAuth` middleware.
+- `src/modules/identity/interfaces/http/plugins/shop-context.plugin.ts` — pushes ALS tenant context.
+- `src/shared/infrastructure/db/tenant-context.ts` — `currentShopId()` / `currentTenant()` accessors.

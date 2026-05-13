@@ -1,0 +1,135 @@
+---
+title: "Shopify install flow"
+description: "OAuth callback → install token → set-password → fully authed session."
+---
+
+When a merchant installs the Shopify app, your Shopify backend exchanges the OAuth code for a shop access token, then POSTs it to mab-api. mab-api stores the encrypted token, ensures a `Shop` row exists, and — depending on whether an owner is already linked — either issues a normal session or an **install token** that lets the merchant set up an account.
+
+## Sequence
+
+```
+Merchant clicks "Install app"
+       │
+       ▼
+Shopify OAuth (handled outside mab-api)
+       │
+       ▼
+Your Shopify-app backend
+       │
+       │  POST /v1/auth/shopify/callback
+       │  x-internal-secret: <INTERNAL_API_SECRET>
+       │  body: { shopifyDomain, accessToken, scopes? }
+       ▼
+mab-api ┌──────────────────────────────────────────────┐
+        │ Shop exists with owner?                      │
+        │   yes → issue accessToken + refreshToken     │
+        │   no  → issue installToken (no refresh yet)  │
+        └──────────────────────────────────────────────┘
+       │
+       ▼
+Client
+   if needsPasswordSetup === true:
+     POST /v1/auth/set-password with the installToken
+   else:
+     normal session, store refreshToken
+```
+
+## `POST /v1/auth/shopify/callback`
+
+Internal endpoint — must be called by your Shopify-app backend, **not** the browser.
+
+### Auth
+
+Header `x-internal-secret: <INTERNAL_API_SECRET>` (compared with `crypto.timingSafeEqual`).
+
+| Code | Status | When |
+|---|---|---|
+| `NO_INTERNAL_SECRET` | 403 | Header missing |
+| `BAD_INTERNAL_SECRET` | 403 | Header doesn't match `env.INTERNAL_API_SECRET` |
+
+### Request body
+
+| Field | Type | Notes |
+|---|---|---|
+| `shopifyDomain` | string | `acme.myshopify.com` |
+| `accessToken` | string | Raw Shopify Admin API access token from OAuth |
+| `scopes` | string[] (optional) | Granted OAuth scopes |
+
+The raw `accessToken` is **encrypted with AES-GCM** using `SHOPIFY_TOKEN_ENCRYPTION_KEY` and stored on the `shops` row. The plaintext is never persisted.
+
+### Response — `200`
+
+```json
+{
+  "shopId": "0a3b...",
+  "accountId": null,
+  "accessToken": "<install token if owner missing, otherwise access token>",
+  "refreshToken": null,
+  "needsPasswordSetup": true
+}
+```
+
+Field semantics:
+
+| Field | Meaning |
+|---|---|
+| `accountId` | `null` when no owner is bound yet, else the owner account UUID. |
+| `accessToken` | An **install token** if no owner; an **access token** otherwise. |
+| `refreshToken` | `null` while in the install-token phase; opaque string when a full session is issued. |
+| `needsPasswordSetup` | `true` → client must call `POST /v1/auth/set-password` next. `false` → client has a full session. |
+
+<Note>
+  An install token is a JWT carrying `{ shopId, purpose: 'install' }`. It is accepted by `set-password` (via `verifyAnyToken`) but is **not** valid on any other authed route.
+</Note>
+
+### Example — Shopify backend → mab-api
+
+```bash
+curl -X POST http://localhost:3001/v1/auth/shopify/callback \
+  -H "Content-Type: application/json" \
+  -H "x-internal-secret: $INTERNAL_API_SECRET" \
+  -d '{
+    "shopifyDomain": "acme.myshopify.com",
+    "accessToken": "shpat_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "scopes": ["read_products", "write_products"]
+  }'
+```
+
+Response when shop is new (no owner):
+
+```json
+{
+  "shopId": "0a3b4f6e-1d2c-4e8a-9b7c-1a2b3c4d5e6f",
+  "accountId": null,
+  "accessToken": "eyJ...installToken...",
+  "refreshToken": null,
+  "needsPasswordSetup": true
+}
+```
+
+## Client follow-up — `POST /v1/auth/set-password`
+
+```bash
+curl -X POST http://localhost:3001/v1/auth/set-password \
+  -H "Authorization: Bearer eyJ...installToken..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "owner@acme.com",
+    "password": "correct-horse-battery-staple"
+  }'
+```
+
+Response (200):
+
+```json
+{
+  "shopId": "0a3b4f6e-1d2c-4e8a-9b7c-1a2b3c4d5e6f",
+  "accountId": "11112222-3333-4444-5555-666677778888",
+  "accessToken": "eyJ...",
+  "refreshToken": "Yt7P..."
+}
+```
+
+After this step the merchant has a full session. The shop is owned, a membership exists, a refresh token is stored, and a background sync job is kicked off (best-effort).
+
+See [Auth → Set password](/modules/identity/auth#set-password) for the full error matrix.

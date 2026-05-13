@@ -1,0 +1,53 @@
+---
+title: "Architecture overview"
+description: "DDD modular monolith — bounded contexts, four-layer modules, strict dependency direction."
+---
+
+## High-level shape
+
+```
+┌──────────────────────────────────────────────────┐
+│  Fastify app (src/app.ts)                        │
+│                                                  │
+│   ├─ shared/http (error handler, swagger, cors)  │
+│   ├─ /health                                     │
+│   └─ modules/<bounded-context>/                  │
+│         ├─ domain/                               │
+│         ├─ application/                          │
+│         ├─ infrastructure/                       │
+│         └─ interfaces/http/                      │
+└──────────────────────────────────────────────────┘
+```
+
+Each module is a **bounded context** with its own aggregates, repositories, use cases, and routes. The application is a **monolith** at deploy time, but it is structured so modules can be extracted into separate services later if needed.
+
+## Layer rules (strict)
+
+| Layer | May import | May NOT import |
+|---|---|---|
+| `domain/` | `@shared/domain`, `@shared/errors` | framework code, drizzle, fastify |
+| `application/` | `domain/`, own `ports/` | `infrastructure/`, `interfaces/` |
+| `infrastructure/` | `domain/`, `application/ports` | `interfaces/` |
+| `interfaces/` | `application/` use cases, `domain/` types | drizzle directly |
+| `<name>.module.ts` | everything in its module | (composition root only) |
+
+Dependency direction always points **inwards** toward `domain/`. Use cases depend on interfaces; the module wires concrete implementations.
+
+## Why this shape?
+
+- **Replaceable infrastructure** — swap Drizzle for another ORM without touching domain logic.
+- **Testable application layer** — use cases are exercised with in-memory fakes from `tests/<module>/_fakes/` — no DB, no HTTP.
+- **Clear ownership** — every file lives in exactly one of the four layers; PR reviewers know where to push back when a domain file imports `drizzle-orm`.
+
+## Stack at a glance
+
+| Concern | Technology |
+|---|---|
+| Runtime | Node 20+, ESM |
+| HTTP | Fastify 5 + `@fastify/type-provider-typebox` |
+| Validation | `@sinclair/typebox` |
+| Persistence | Postgres 16 via `postgres` (postgres-js) + Drizzle ORM 0.45 + Drizzle Kit 0.30 |
+| Auth | `jose` (JWT HS256) + `argon2` + opaque refresh tokens |
+| Background jobs | BullMQ over Redis |
+| Logging | `pino` |
+| Tests | `vitest` |

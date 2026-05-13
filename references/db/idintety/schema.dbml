@@ -1,0 +1,123 @@
+// Identity module — DBML schema diagram
+// Render at https://dbdiagram.io or with `dbdocs` CLI.
+// Source of truth lives in src/modules/identity/infrastructure/persistence/schema/.
+
+Project mab_identity {
+  database_type: 'PostgreSQL'
+  Note: 'Identity bounded context. Tenant = Shop. Account = human (email + password). Membership = account ↔ shop join.'
+}
+
+Enum account_status {
+  active
+  suspended
+}
+
+Enum shop_status {
+  active
+  suspended
+  archived
+}
+
+Enum subscription_status {
+  trial
+  active
+  past_due
+  cancelled
+}
+
+Enum tier {
+  trial
+  starter
+  growth
+  pro
+}
+
+Table accounts {
+  id              uuid          [pk, default: `gen_random_uuid()`]
+  email           text          [not null, unique]
+  password_hash   text          [not null]
+  status          account_status [not null, default: 'active']
+  last_login_at   timestamptz
+  created_at      timestamptz   [not null, default: `now()`]
+  updated_at      timestamptz   [not null, default: `now()`]
+
+  Note: 'One row per human. Email is globally unique. No shop, no role.'
+}
+
+Table shops {
+  id                  uuid          [pk, default: `gen_random_uuid()`]
+  shopify_domain      text          [not null, unique]
+  name                text          [not null]
+  status              shop_status   [not null, default: 'active']
+  locale              text          [not null, default: 'en']
+  owner_account_id    uuid          [ref: > accounts.id]
+  created_at          timestamptz   [not null, default: `now()`]
+  updated_at          timestamptz   [not null, default: `now()`]
+
+  Note: 'Tenant root. owner_account_id points at the Account that registered the shop.'
+}
+
+Table memberships {
+  id          uuid        [pk, default: `gen_random_uuid()`]
+  shop_id     uuid        [not null, ref: > shops.id]
+  account_id  uuid        [not null, ref: > accounts.id]
+  created_at  timestamptz [not null, default: `now()`]
+
+  indexes {
+    (shop_id, account_id) [unique, name: 'memberships_shop_account_unique']
+    account_id            [name: 'memberships_account_idx']
+    shop_id               [name: 'memberships_shop_idx']
+  }
+
+  Note: 'Account ↔ Shop join. One account can be a member of many shops. Delete row to revoke.'
+}
+
+Table invites {
+  id          uuid        [pk, default: `gen_random_uuid()`]
+  shop_id     uuid        [not null, ref: > shops.id]
+  email       text        [not null]
+  token_hash  text        [not null, unique]
+  expires_at  timestamptz [not null]
+  accepted_at timestamptz
+  created_at  timestamptz [not null, default: `now()`]
+
+  indexes {
+    shop_id [name: 'invites_shop_idx']
+  }
+
+  Note: 'Invitation issued by a shop for a given email. Accept-invite resolves the email to a new or existing account and creates a Membership.'
+}
+
+Table subscriptions {
+  id              uuid                [pk, default: `gen_random_uuid()`]
+  shop_id         uuid                [not null, unique, ref: > shops.id]
+  tier            tier                [not null]
+  status          subscription_status [not null]
+  period_start    timestamptz         [not null]
+  period_end      timestamptz         [not null]
+  trial_ends_at   timestamptz
+  created_at      timestamptz         [not null, default: `now()`]
+  updated_at      timestamptz         [not null, default: `now()`]
+
+  Note: 'One subscription per shop. Tier set is platform-wide (enum + price map in code).'
+}
+
+Table refresh_tokens {
+  id          uuid        [pk, default: `gen_random_uuid()`]
+  account_id  uuid        [not null, ref: > accounts.id]
+  token_hash  text        [not null, unique]
+  expires_at  timestamptz [not null]
+  revoked_at  timestamptz
+  created_at  timestamptz [not null, default: `now()`]
+
+  indexes {
+    account_id [name: 'refresh_tokens_account_idx']
+  }
+
+  Note: 'Opaque refresh tokens (SHA-256 of base64url random). Rotated on every /auth/refresh. Account-scoped, not shop-scoped — a single token can re-auth into any shop the account is a member of.'
+}
+
+// Cascade behavior (Drizzle definitions):
+//   memberships.account_id, refresh_tokens.account_id  → ON DELETE CASCADE (deleting an account deletes its memberships + refresh tokens)
+//   memberships.shop_id, invites.shop_id, subscriptions.shop_id  → ON DELETE CASCADE (deleting a shop nukes its tenant data)
+//   shops.owner_account_id  → NO action (owner deletion handled at app layer)

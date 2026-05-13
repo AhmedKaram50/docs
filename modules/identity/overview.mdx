@@ -1,0 +1,66 @@
+---
+title: "Identity — overview"
+description: "Who can access what shop, with what subscription, via what credentials."
+---
+
+The Identity module is the authentication, authorization, and tenant-management layer of mab-api. It owns:
+
+- **Accounts** — humans with email + password
+- **Shops** — tenants (one per Shopify store)
+- **Memberships** — join between accounts and shops
+- **Invites** — shop-scoped, email-targeted, one-time
+- **Refresh tokens** — opaque, hashed, rotated
+- **Subscriptions** — per-shop trial/billing state
+
+## Routes at a glance
+
+All routes are prefixed with `/v1`.
+
+| Group | Prefix | Auth | Pages |
+|---|---|---|---|
+| Auth | `/v1/auth` | mixed | [Auth](/modules/identity/auth) · [Shopify install](/modules/identity/shopify-install-flow) |
+| Shops | `/v1/shops` | Bearer | [Shops](/modules/identity/shops) |
+| Team | `/v1/team` | mixed | [Team](/modules/identity/team) |
+| Subscription | `/v1/subscription` | Bearer | [Subscription](/modules/identity/subscription) |
+
+## When you need…
+
+<CardGroup cols={2}>
+  <Card title="To sign up a new shop" icon="store" href="/modules/identity/auth#register">
+    `POST /v1/auth/register`
+  </Card>
+  <Card title="To log a user in" icon="key" href="/modules/identity/auth#login">
+    `POST /v1/auth/login`
+  </Card>
+  <Card title="To handle a Shopify OAuth callback" icon="shop" href="/modules/identity/shopify-install-flow">
+    `POST /v1/auth/shopify/callback`
+  </Card>
+  <Card title="To invite a teammate" icon="user-plus" href="/modules/identity/team#invite">
+    `POST /v1/team/invites`
+  </Card>
+  <Card title="To start a trial / change tier" icon="credit-card" href="/modules/identity/subscription">
+    `/v1/subscription/*`
+  </Card>
+  <Card title="Errors emitted" icon="triangle-exclamation" href="/modules/identity/errors">
+    Full machine-readable code list
+  </Card>
+</CardGroup>
+
+## Aggregates
+
+```
+Account ─── Membership ─── Shop ─── Subscription
+                              │
+                              ├── Invite (one-time, per email + shop)
+                              │
+                              └── RefreshToken (account-scoped, but issued via shop login)
+```
+
+- **`Account`** — global. Email unique across the system. Password hashed with argon2.
+- **`Shop`** — tenant. Identified by `shopifyDomain`. Optionally holds an encrypted Shopify access token (AES-GCM).
+- **`Membership`** — `(account_id, shop_id)` unique. Created on register, invite-accept, or set-password.
+- **`Invite`** — `(email, shop_id)` with one-time token (sha256-hashed in DB).
+- **`Subscription`** — one per shop. Tiers: `starter | growth | pro`. Status: `trialing | active | canceled | expired`.
+- **`RefreshToken`** — `account_id` + `token_hash` + lifetimes. Rotated on every refresh.
+
+Continue to [Concepts](/modules/identity/concepts) for an extended walk-through of the domain.

@@ -1,0 +1,145 @@
+---
+title: "Subscription"
+description: "Per-shop billing tier and lifecycle."
+---
+
+Every shop has exactly one subscription. The Identity module owns the subscription state machine; billing-provider integration (Stripe, etc.) is outside this module and feeds events back into these endpoints.
+
+All routes are prefixed `/v1/subscription` and require `Authorization: Bearer <accessToken>`.
+
+## Subscription response
+
+```json
+{
+  "id": "aaaa...",
+  "shopId": "0a3b...",
+  "tier": "starter",
+  "status": "trialing",
+  "periodStart": "2026-05-01T10:30:00.000Z",
+  "periodEnd": "2026-06-01T10:30:00.000Z",
+  "trialEndsAt": "2026-05-15T10:30:00.000Z",
+  "createdAt": "2026-05-01T10:30:00.000Z",
+  "updatedAt": "2026-05-12T14:21:09.420Z"
+}
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | uuid | Subscription ID |
+| `shopId` | uuid | Owning shop |
+| `tier` | `starter` \| `growth` \| `pro` | Current tier |
+| `status` | `trialing` \| `active` \| `canceled` \| `expired` | Lifecycle state |
+| `periodStart`, `periodEnd` | ISO 8601 | Current billing window |
+| `trialEndsAt` | ISO 8601 \| null | Set only while `status = trialing` |
+
+---
+
+## Get subscription
+
+<ParamField path="GET /v1/subscription/" />
+
+### Response — `200`
+
+Subscription response (above).
+
+### Errors
+
+| Code | Status | When |
+|---|---|---|
+| `SUBSCRIPTION_NOT_FOUND` | 404 | Shop has no subscription row yet — shouldn't happen for shops registered via `/v1/auth/register` (which auto-starts a trial). |
+
+### Example
+
+```bash
+curl http://localhost:3001/v1/subscription/ \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+---
+
+## Start a trial
+
+Manually start a trial. Normally `/v1/auth/register` and `/v1/auth/shopify/callback` both auto-start a trial, so this endpoint is mostly used by internal tooling.
+
+<ParamField path="POST /v1/subscription/trial" />
+
+### Response — `201`
+
+Subscription response with `status = "trialing"`.
+
+### Errors
+
+| Code | Status | When |
+|---|---|---|
+| `SUBSCRIPTION_EXISTS` | 409 | A subscription already exists for the shop |
+
+### Example
+
+```bash
+curl -X POST http://localhost:3001/v1/subscription/trial \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+---
+
+## Change tier
+
+Move between `starter`, `growth`, `pro`. The subscription must exist.
+
+<ParamField path="PUT /v1/subscription/" />
+
+### Request body
+
+| Field | Type | Notes |
+|---|---|---|
+| `tier` | `starter` \| `growth` \| `pro` | New tier |
+
+### Response — `200`
+
+Subscription response with updated `tier`.
+
+### Errors
+
+| Code | Status | When |
+|---|---|---|
+| `SUBSCRIPTION_NOT_FOUND` | 404 | Shop has no subscription |
+| `INVALID_TIER_TRANSITION` | 422 | Domain rule rejected the transition (e.g. moving from `canceled`) |
+
+### Example
+
+```bash
+curl -X PUT http://localhost:3001/v1/subscription/ \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "tier": "growth" }'
+```
+
+---
+
+## Cancel subscription
+
+Move the subscription into `canceled`. The row is kept so historical data is preserved — `GET /v1/subscription/` continues to return it.
+
+<ParamField path="DELETE /v1/subscription/" />
+
+### Response — `200`
+
+Subscription response with `status = "canceled"`.
+
+### Errors
+
+| Code | Status | When |
+|---|---|---|
+| `SUBSCRIPTION_NOT_FOUND` | 404 | Shop has no subscription |
+| `ALREADY_CANCELED` | 422 | Subscription is already canceled |
+
+### Example
+
+```bash
+curl -X DELETE http://localhost:3001/v1/subscription/ \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+<Note>
+  Tier and status transitions are guarded at the **domain** layer (`Subscription.changeTier()`, `Subscription.cancel()`). Invalid transitions surface as `DomainError` → `422` with the code emitted by the aggregate.
+</Note>

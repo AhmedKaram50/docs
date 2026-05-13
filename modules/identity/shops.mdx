@@ -1,0 +1,89 @@
+---
+title: "Shops"
+description: "Read and update the authenticated shop."
+---
+
+The shop endpoints operate on the **currently authenticated shop** — the one referenced in the access-token claims (`shopId`). There is no `/shops/:id` — clients can only see and edit their own shop.
+
+All routes require `Authorization: Bearer <accessToken>`.
+
+## Shop response
+
+```json
+{
+  "id": "0a3b...",
+  "shopifyDomain": "acme.myshopify.com",
+  "name": "Acme",
+  "status": "active",
+  "locale": "en",
+  "ownerAccountId": "1111...",
+  "createdAt": "2026-05-01T10:30:00.000Z",
+  "updatedAt": "2026-05-12T14:21:09.420Z"
+}
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | uuid | Shop ID |
+| `shopifyDomain` | string | Immutable, identifies the tenant |
+| `name` | string | Display name |
+| `status` | string | One of `active` \| `suspended` \| `archived` |
+| `locale` | string | e.g. `en`, `ar`, `fr` |
+| `ownerAccountId` | uuid \| null | First account assigned ownership |
+| `createdAt`, `updatedAt` | ISO 8601 | UTC timestamps |
+
+---
+
+## Get current shop
+
+<ParamField path="GET /v1/shops/me" />
+
+### Response — `200`
+
+Shop response (above).
+
+### Errors
+
+| Code | Status | When |
+|---|---|---|
+| `NO_AUTH` | 401 | Missing/invalid bearer token |
+| `NOT_FOUND` | 404 | Shop deleted out from under the session (rare) |
+
+### Example
+
+```bash
+curl http://localhost:3001/v1/shops/me \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+---
+
+## Update current shop
+
+<ParamField path="PATCH /v1/shops/me" />
+
+### Request body
+
+All fields optional. Omit a field to leave it unchanged.
+
+| Field | Type | Notes |
+|---|---|---|
+| `name` | string (≥ 1) | New display name |
+| `locale` | string (≥ 1) | New locale |
+
+### Response — `200`
+
+Shop response with updated values + new `updatedAt`.
+
+### Example
+
+```bash
+curl -X PATCH http://localhost:3001/v1/shops/me \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "name": "Acme Co.", "locale": "fr" }'
+```
+
+<Note>
+  `shopifyDomain`, `status`, and `ownerAccountId` are not editable through this endpoint. `shopifyDomain` is immutable. `status` and ownership are controlled by other flows (Shopify callback, set-password, internal admin tools).
+</Note>

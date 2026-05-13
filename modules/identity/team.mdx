@@ -1,0 +1,180 @@
+---
+title: "Team"
+description: "Invite teammates, list members, accept invites, revoke access."
+---
+
+The team endpoints manage the **memberships** of the authenticated shop. Routes are prefixed `/v1/team`.
+
+| Route | Auth |
+|---|---|
+| `GET /v1/team/accounts` | Bearer |
+| `POST /v1/team/invites` | Bearer |
+| `POST /v1/team/invites/:token/accept` | **Public** (the raw token is the credential) |
+| `DELETE /v1/team/accounts/:id` | Bearer |
+
+---
+
+## List members {#list}
+
+<ParamField path="GET /v1/team/accounts" />
+
+### Response — `200`
+
+```json
+[
+  {
+    "accountId": "1111...",
+    "membershipId": "aaaa...",
+    "email": "owner@acme.com",
+    "status": "active",
+    "lastLoginAt": "2026-05-12T09:00:00.000Z",
+    "joinedAt": "2026-05-01T10:30:00.000Z"
+  }
+]
+```
+
+Sorted by `joinedAt` ascending. `lastLoginAt` is `null` if the account has never logged in.
+
+### Example
+
+```bash
+curl http://localhost:3001/v1/team/accounts \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+---
+
+## Invite a member {#invite}
+
+Generates a one-time, shop-scoped, email-targeted invite. The raw token is returned **once** — store it (e.g. email it to the invitee). The DB stores only `sha256(token)`.
+
+<ParamField path="POST /v1/team/invites" />
+
+### Request body
+
+| Field | Type | Notes |
+|---|---|---|
+| `email` | string (email) | Invitee email |
+| `ttlHours` | integer (optional) | 1–720. Defaults to 72. |
+
+### Response — `201`
+
+```json
+{
+  "inviteId": "9999...",
+  "token": "raw-one-time-token-show-once",
+  "expiresAt": "2026-05-15T10:30:00.000Z"
+}
+```
+
+### Errors
+
+| Code | Status | When |
+|---|---|---|
+| `ALREADY_MEMBER` | 409 | `email` already maps to an account that is already a member of this shop |
+
+### Example
+
+```bash
+curl -X POST http://localhost:3001/v1/team/invites \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "email": "teammate@acme.com", "ttlHours": 168 }'
+```
+
+Use the returned `token` to build the invite URL, e.g.:
+
+```
+https://app.example.com/invites/raw-one-time-token-show-once
+```
+
+---
+
+## Accept an invite {#accept}
+
+Public endpoint — the raw token in the URL **is** the credential. The route does not require a bearer token.
+
+<ParamField path="POST /v1/team/invites/:token/accept" />
+
+### Path params
+
+| Param | Notes |
+|---|---|
+| `token` | Raw invite token from `POST /v1/team/invites` |
+
+### Request body
+
+| Field | Type | Notes |
+|---|---|---|
+| `password` | string | ≥ 8 chars |
+
+### Behavior
+
+- If an account already exists for the invite's email → `password` must match that account's existing password. This protects existing accounts from being hijacked by an invite to their email.
+- If no account exists → a new account is created with the supplied password.
+- A membership is created linking the account to the shop.
+- A new refresh + access token pair is issued — the caller is logged in.
+
+### Response — `201`
+
+```json
+{
+  "shopId": "0a3b...",
+  "accountId": "1111...",
+  "accessToken": "eyJ...",
+  "refreshToken": "Yt7P..."
+}
+```
+
+### Errors
+
+| Code | Status | When |
+|---|---|---|
+| `INVITE_NOT_FOUND` | 404 | Token doesn't match any invite |
+| `INVITE_EXPIRED` | 422 | Token expired (domain error) |
+| `INVITE_ALREADY_ACCEPTED` | 422 | Token already used |
+| `WEAK_PASSWORD` | 422 | Creating a new account but `password.length < 8` |
+| `INVALID_CREDENTIALS` | 401 | Existing account, supplied password is wrong |
+| `ALREADY_MEMBER` | 409 | Existing account is already a member of the shop |
+
+### Example
+
+```bash
+curl -X POST http://localhost:3001/v1/team/invites/raw-one-time-token/accept \
+  -H "Content-Type: application/json" \
+  -d '{ "password": "correct-horse-battery-staple" }'
+```
+
+---
+
+## Revoke a member {#revoke}
+
+Remove an account from the shop. Drops the membership and revokes that account's refresh tokens for this shop.
+
+<ParamField path="DELETE /v1/team/accounts/:id" />
+
+### Path params
+
+| Param | Notes |
+|---|---|
+| `id` | UUID of the account to revoke |
+
+### Response — `204` (empty)
+
+### Errors
+
+| Code | Status | When |
+|---|---|---|
+| `NOT_FOUND` | 404 | Account is not a member of this shop |
+| `CANNOT_REVOKE_OWNER` | 409 | The target account is the shop owner |
+
+### Example
+
+```bash
+curl -X DELETE http://localhost:3001/v1/team/accounts/1111... \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+<Warning>
+  Revoking a member is irreversible — re-add them with a new invite.
+</Warning>
