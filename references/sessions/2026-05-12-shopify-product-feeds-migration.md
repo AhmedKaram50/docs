@@ -379,4 +379,4 @@ User to decide before next session.
 
 - Plan: `~/.claude/plans/yes-bro-i-need-iterative-grove.md`
 - Reference implementation: `/home/ahmed/work/rastova/mobile-app-builder`
-- Shopify docs: <https://shopify.dev/docs/apps/build/sales-channels/contextual-product-feeds>
+- Shopify docs: [contextual-product-feeds](https://shopify.dev/docs/apps/build/sales-channels/contextual-product-feeds)

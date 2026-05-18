@@ -49,7 +49,7 @@ When a channel connection is deleted via [`channelDelete`](https://shopify.dev/d
 
 After a merchant completes authentication with their external platform account, call [`channelCreate`](https://shopify.dev/docs/api/admin-graphql/unstable/mutations/channelCreate) to establish the connection:
 
-## POST https://{shop}.myshopify.com/admin/api/{api\_version}/graphql.json
+## POST https://\{shop\}.myshopify.com/admin/api/\{api\_version\}/graphql.json
 
 ## channelCreate mutation
 
@@ -117,7 +117,7 @@ If the channel specification declares `requirements.expectsOnlineStoreParity = t
 
 Use [`channelUpdate`](https://shopify.dev/docs/api/admin-graphql/unstable/mutations/channelUpdate) to modify account information or reassign a channel specification:
 
-## POST https://{shop}.myshopify.com/admin/api/{api\_version}/graphql.json
+## POST https://\{shop\}.myshopify.com/admin/api/\{api\_version\}/graphql.json
 
 ## channelUpdate mutation
 
@@ -173,7 +173,7 @@ mutation ChannelUpdate($id: ID!, $input: ChannelUpdateInput!) {
 
 When a merchant disconnects their external account or a channel connection is no longer valid, remove it with [`channelDelete`](https://shopify.dev/docs/api/admin-graphql/unstable/mutations/channelDelete). This removes all associated product feeds.
 
-## POST https://{shop}.myshopify.com/admin/api/{api\_version}/graphql.json
+## POST https://\{shop\}.myshopify.com/admin/api/\{api\_version\}/graphql.json
 
 ## channelDelete mutation
 
@@ -262,7 +262,7 @@ A sales channel app cannot query channels belonging to other apps.
 
 After establishing a channel connection and subscribing to [product feed webhooks](https://shopify.dev/docs/apps/build/sales-channels/contextual-product-feeds#step-3-subscribe-to-product-feed-webhooks), trigger a full sync to receive the merchant's published product catalog. A full sync is triggered by default when your feed is first created, but if you need a full reconciliation you can trigger a full sync manually using the following mutation:
 
-## POST https://{shop}.myshopify.com/admin/api/{api\_version}/graphql.json
+## POST https://\{shop\}.myshopify.com/admin/api/\{api\_version\}/graphql.json
 
 ## channelFullSync mutation
 

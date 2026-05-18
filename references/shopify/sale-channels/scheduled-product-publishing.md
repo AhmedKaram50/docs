@@ -47,7 +47,7 @@ The following is the recommended workflow for channels that include validation:
 
 Request `resourcePublicationOnCurrentPublication` on the [GraphQL Admin API's Product](https://shopify.dev/docs/api/admin-graphql/latest/objects/product) object. A `publishDate` in the future indicates that the product is scheduled to display on the channel at the specified datetime.
 
-## POST /api/{api\_version}/graphql.json
+## POST /api/\{api\_version\}/graphql.json
 
 ##### GraphQL query
 
